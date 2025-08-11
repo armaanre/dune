@@ -1,0 +1,12 @@
+# Node
+web/node_modules
+web/.next
+web/out
+web/.turbo
+
+# Go
+api/bin
+api/dist
+
+# OS
+.DS_Store

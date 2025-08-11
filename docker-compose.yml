@@ -1,0 +1,38 @@
+version: '3.9'
+services:
+  mongo:
+    image: mongo:7
+    container_name: formbuilder-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: formbuilder
+
+  api:
+    build: ./api
+    container_name: formbuilder-api
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=formbuilder
+      - PORT=8080
+    depends_on:
+      - mongo
+    ports:
+      - "8080:8080"
+
+  web:
+    build: ./web
+    container_name: formbuilder-web
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - INTERNAL_API_URL=http://api:8080
+      - NODE_ENV=production
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo_data:
