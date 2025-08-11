@@ -28,7 +28,9 @@ func (h *FormsHandler) Register(app *fiber.App) {
 	api.Get("/health", func(c *fiber.Ctx) error { return c.SendString("ok") })
 	api.Post("/forms", h.createForm)
 	api.Get("/forms/:id", h.getForm)
+	api.Put("/forms/:id", h.updateForm)
 	api.Post("/forms/:id/responses", h.submitResponse)
+	api.Get("/forms/:id/analytics", h.getAnalytics)
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Hello World")
 	})
@@ -85,6 +87,29 @@ func (h *FormsHandler) getForm(c *fiber.Ctx) error {
 	return c.JSON(form)
 }
 
+func (h *FormsHandler) updateForm(c *fiber.Ctx) error {
+	id := c.Params("id")
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid id")
+	}
+	var form models.Form
+	if err := c.BodyParser(&form); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	form.UpdatedAt = time.Now().Unix()
+	_, err = db.FormsCollection().UpdateByID(c.Context(), oid, bson.M{"$set": bson.M{
+		"title":     form.Title,
+		"fields":    form.Fields,
+		"updatedAt": form.UpdatedAt,
+	}})
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	form.Id = oid
+	return c.JSON(form)
+}
+
 func (h *FormsHandler) submitResponse(c *fiber.Ctx) error {
 	id := c.Params("id")
 	oid, err := primitive.ObjectIDFromHex(id)
@@ -119,6 +144,25 @@ func (h *FormsHandler) submitResponse(c *fiber.Ctx) error {
 		h.Hub.Broadcast(id, analyticsData)
 	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"ok": true})
+}
+
+func (h *FormsHandler) getAnalytics(c *fiber.Ctx) error {
+	id := c.Params("id")
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid id")
+	}
+	var form models.Form
+	if err := db.FormsCollection().FindOne(c.Context(), bson.M{"_id": oid}).Decode(&form); err != nil {
+		return fiber.NewError(fiber.StatusNotFound, "form not found")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, err := analytics.Compute(ctx, db.FormsCollection().Database(), form)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(data)
 }
 
 func (h *FormsHandler) wsForm(c *websocket.Conn) {
